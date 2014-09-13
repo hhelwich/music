@@ -150,8 +150,30 @@ frequency = (canvasSize.sampledBy mouseDrag, (size, pos) ->
 # freq2 :: number
 freq2 = 880
 
+# maxOvertones :: number
+maxOvertones = 10
+
 # freq12friction :: EventStream number(0…1)
 freq12friction = (frequency.map (f) -> friction f, freq2).skipDuplicates()
+
+# Draws a vertical line at the position of the given frequency on the canvas with the given size.
+# Returns `true` if the frequency is in the range of the canvas and `false` otherwise.
+#
+# drawFreq :: CanvasRenderingContext2D, Size, number -> boolean
+drawFreq = (context, size, f) ->
+  nf = freqToNorm f
+  if isInRange = 0 <= nf <= 1
+    context.fillRect (Math.round nf * size.width), 0, 1, size.height
+  isInRange
+
+# Draw maximal `maxCount` overtones for the given frequency on the given canvas.
+#
+# drawOvertones :: CanvasRenderingContext2D, Size, number, number -> ?
+drawOvertones = (context, size, f, maxCount) ->
+  overtone = (i) ->
+    if i <= maxCount and drawFreq context, size, f * (i + 1)
+      overtone i + 1
+  overtone 1
 
 # Draw on canvas
 Bacon.onValues frequency, canvasSize, (f, size) ->
@@ -163,6 +185,15 @@ Bacon.onValues frequency, canvasSize, (f, size) ->
     f0 = f1
   ctx.fillStyle = "blue"
   ctx.fillRect (Math.round (freqToNorm f) * size.width), 0, 1, size.height
+  # Draw overtone lines
+  ctx.fillStyle = "#9090FF"
+  drawOvertones ctx, size, f, maxOvertones
+  ctx.fillStyle = "red"
+  # Draw reference frequency
+  ctx.fillRect (Math.round (freqToNorm freq2) * size.width), 0, 1, size.height
+  # Draw reference overtone lines
+  ctx.fillStyle = "#FF9090"
+  drawOvertones ctx, size, freq2, maxOvertones
 
 #-------------------------------------------------------- Sound --------------------------------------------------------
 
@@ -172,13 +203,19 @@ if not AudioContext? # Web Audio API is available.
 
 context = new AudioContext()
 
-oscillator = context.createOscillator()
-frequency.onValue (value) -> oscillator.frequency.value = value
-oscillator.connect context.destination
+oscillator = oscillator2 = null
 
-oscillator2 = context.createOscillator()
-oscillator2.frequency.value = freq2
-oscillator2.connect context.destination
+isPlaying.onValue (playing) ->
+  if playing
+    oscillator = context.createOscillator()
+    frequency.onValue (value) -> oscillator.frequency.value = value
+    oscillator.connect context.destination
 
-oscillator.start 0
-oscillator2.start 0
+    oscillator2 = context.createOscillator()
+    oscillator2.frequency.value = freq2
+    oscillator2.connect context.destination
+    oscillator.start 0
+    oscillator2.start 0
+  else
+    oscillator.stop 0
+    oscillator2.stop 0
